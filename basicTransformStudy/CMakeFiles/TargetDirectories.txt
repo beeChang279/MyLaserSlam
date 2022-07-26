@@ -1,0 +1,3 @@
+/home/beechang/下载/HW1/basicTransformStudy/CMakeFiles/rebuild_cache.dir
+/home/beechang/下载/HW1/basicTransformStudy/CMakeFiles/basicTransformStudy.dir
+/home/beechang/下载/HW1/basicTransformStudy/CMakeFiles/edit_cache.dir

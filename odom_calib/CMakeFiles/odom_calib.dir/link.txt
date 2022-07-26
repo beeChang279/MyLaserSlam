@@ -1,0 +1,1 @@
+g++  -std=c++11 -march=native -O3 -O3 -DNDEBUG  -rdynamic CMakeFiles/odom_calib.dir/odom_calib.cpp.o  -o odom_calib 
