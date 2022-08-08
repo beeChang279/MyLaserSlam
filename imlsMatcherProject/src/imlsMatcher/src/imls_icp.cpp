@@ -206,6 +206,15 @@ bool IMLSICPMatcher::ImplicitMLSFunction(Eigen::Vector2d x,
 
     //TODO
     //根据函数进行投影．计算height，即ppt中的I(x)
+    double m_h_square = m_h * m_h;
+    for(int i = 0; i < nearPoints.size(); ++i)
+    {
+        Eigen::Vector2d delta_p = x - nearPoints[i];
+        double weight = std::exp(-delta_p.squaredNorm() / m_h_square);
+        projSum += weight * delta_p.dot(nearNormals[i]);
+        weightSum += weight;
+    }
+    height = projSum / weightSum;
 
     //end of TODO
 
@@ -288,6 +297,7 @@ void IMLSICPMatcher::projSourcePtToSurface(
         Eigen::Vector2d yi;
         //TODO
         //计算yi．
+        yi = xi - height * nearNormal;
 
         //end of TODO
         out_cloud.push_back(yi);
@@ -439,6 +449,35 @@ Eigen::Vector2d IMLSICPMatcher::ComputeNormal(std::vector<Eigen::Vector2d> &near
     //TODO
     //根据周围的激光点计算法向量，参考ppt中NICP计算法向量的方法
 
+    //1、求出Xi周围点云的质心u
+    Eigen::Vector2d temp_sum(0,0), u(0,0);//初始化为零，未初始化为零出错了
+    for(int i = 0; i < nearPoints.size(); i++)
+    {
+        temp_sum += nearPoints[i];
+    }
+    u = temp_sum / nearPoints.size();
+  
+    //2、求出Xi的法向量
+    Eigen::Matrix2d variance;
+    variance.setZero();//初始化置零
+    for(int i = 0; i < nearPoints.size(); i++)
+    {
+        variance += (nearPoints[i] - u) * (nearPoints[i] - u).transpose();//协方差矩阵2x1 * 1x2 = 2x2
+    }
+ 
+    variance = variance / nearPoints.size();
+    Eigen::EigenSolver<Eigen::Matrix2d> solver(variance);
+    Eigen::Matrix2d eigenvalues = solver.pseudoEigenvalueMatrix(); //evd分解求得特征值
+    Eigen::Matrix2d eigenvector = solver.pseudoEigenvectors(); //evd分解求得特征向量
+ 
+    //Xi的法向量为最小特征值对应的特征向量
+    if(eigenvalues(0,0) < eigenvalues(1,1))
+    {
+        normal = eigenvector.col(0);
+    }else
+    {
+        normal = eigenvector.col(1);
+    }
     //end of TODO
 
     return normal;
