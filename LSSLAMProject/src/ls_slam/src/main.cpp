@@ -137,20 +137,22 @@ int main(int argc, char **argv)
                                 Edges);
 
     double initError = ComputeError(Vertexs,Edges);
-    std::cout <<"initError:"<<initError<<std::endl;
+    std::cout << "initError:" << initError << std::endl;
 
     int maxIteration = 100;
     double epsilon = 1e-4;
 
     for(int i = 0; i < maxIteration;i++)
     {
-        std::cout <<"Iterations:"<<i<<std::endl;
+        std::cout << "Iterations:" << i << std::endl;
         Eigen::VectorXd dx = LinearizeAndSolve(Vertexs,Edges);
 
         //进行更新
         //TODO--Start
-
-        
+        for(int i = 0; i < Vertexs.size(); i++)
+        {
+            Vertexs[i] += dx.block(i * 3, 0, 3, 1);
+        }
         //TODO--End
 
         double maxError = -1;
