@@ -6,7 +6,7 @@
 #include <eigen3/Eigen/LU>
 
 #include <iostream>
-
+const double GN_PI = 3.1415926;
 
 //位姿-->转换矩阵
 Eigen::Matrix3d PoseToTrans(Eigen::Vector3d x)
@@ -53,7 +53,6 @@ double ComputeError(std::vector<Eigen::Vector3d>& Vertexs,
         Eigen::Vector3d ei = TransToPose(Ei);
         
         sumError += ei.transpose() * infoMatrix * ei;
-        std::cout << "sumError: " << sumError << std::endl;
     }
     return sumError;
 }
@@ -71,10 +70,11 @@ double ComputeError(std::vector<Eigen::Vector3d>& Vertexs,
  */
 void CalcJacobianAndError(Eigen::Vector3d xi,Eigen::Vector3d xj,Eigen::Vector3d z,
                           Eigen::Vector3d& ei,Eigen::Matrix3d& Ai,Eigen::Matrix3d& Bi)
-{std::cout << "xi: " << xi << std::endl;
-std::cout << "xj: " << xj << std::endl;
+{
     //TODO--Start
-#if 1
+    
+    //定义变量
+    double angle = 0;
     ei.setZero();
     Ai.setZero();
     Bi.setZero();
@@ -82,79 +82,59 @@ std::cout << "xj: " << xj << std::endl;
     Eigen::Matrix2d Ri;
     Eigen::Matrix2d Rij;
     Eigen::Matrix2d dRi_T_theta;
-    Ri.setZero();
-    Rij.setZero();
-    dRi_T_theta.setZero();
-    ti(0) = xi(0);
-    ti(1) = xi(1);
-    tj(0) = xj(0);
-    tj(1) = xj(1);
-    tij(0) = z(0);
-    tij(1) = z(1);
-    Ri << cos(xi(2)), -sin(xi(2)),
-            sin(xi(2)), cos(xi(2));
-   
-    Rij << cos(z(2)), -sin(z(2)),
-            sin(z(2)), cos(z(2));
+    Eigen::Matrix3d Ti;
+    Eigen::Matrix3d Tj;
     
-std::cout << "Rij: " << Rij << std::endl;    
-
+    //初始化值
+    Ri.setZero();//xi到世界坐标系的旋转矩阵
+    Rij.setZero();//xj到xi坐标系的旋转矩阵
+    dRi_T_theta.setZero();//Ri的转置对theta_i的偏导数
+    Ti.setZero();//xi到世界坐标系的变换矩阵
+    Tj.setZero();//xj到世界坐标系的变换矩阵
+    ti(0) = xi(0);//xi的平移向量x分量
+    ti(1) = xi(1);//xi的平移向量y分量
+    tj(0) = xj(0);//xj的平移向量x分量
+    tj(1) = xj(1);//xj的平移向量y分量
+    tij(0) = z(0);//xj相对于xi的平移向量x分量
+    tij(1) = z(1);//xj相对于xi的平移向量y分量
+    Ti = PoseToTrans(xi);
+    Tj = PoseToTrans(xj);
+    Ri << cos(xi(2)), -sin(xi(2)),
+            sin(xi(2)), cos(xi(2));//Ri = Ti.block(0, 0, 2, 2);
+   
+    // Rij << cos(z(2)), -sin(z(2)),
+    //         sin(z(2)), cos(z(2));//用z算出来的不对
+    Rij = (Ti.inverse() * Tj).block(0, 0, 2, 2); //xj到世界坐标系再到xi坐标系  
     ei_t = Rij.transpose() * ((Ri.transpose() * (tj - ti)) - tij);
     ei(0) = ei_t(0);
     ei(1) = ei_t(1);
-    ei(2) = xj(2) - xi(2) - z(2);
-std::cout << "ei: " << ei << std::endl;
-    dRi_T_theta << -(sin(xi(2))), cos(xi(2)),
-                   -(cos(xi(2))), -(sin(xi(2)));
-    Ai.block(0, 0, 2, 2) = -Rij.inverse() * Ri.inverse();
-    Ai.block(0, 2, 2, 1) = Rij.inverse() * dRi_T_theta * (tj - ti);
+    angle = xj(2) - xi(2) - z(2);
+    if(angle > GN_PI)
+    {
+        angle -= 2 * GN_PI;
+    }else if(angle < -GN_PI)
+    {
+        angle += 2 * GN_PI;
+    }      
+    ei(2) = angle;
+
+    // dRi_T_theta << -(sin(xi(2))), cos(xi(2)),
+    //                -(cos(xi(2))), -(sin(xi(2)));//Ri的转置不需要对theta_i求导？求完导出错
+    dRi_T_theta << cos(xi(2)), sin(xi(2)),
+                    -sin(xi(2)), cos(xi(2));
+    Ai.block(0, 0, 2, 2) = -Rij.transpose() * Ri.transpose();
+    Ai.block(0, 2, 2, 1) = Rij.transpose() * dRi_T_theta * (tj - ti);
     Ai(2, 0) = 0;
     Ai(2, 1) = 0;
     Ai(2, 2) = -1;
 
-    Bi.block(0, 0, 2, 2) = Rij.inverse() * Ri.inverse();
+    Bi.block(0, 0, 2, 2) = Rij.transpose() * Ri.transpose();
     Bi(0, 2) = 0;
     Bi(1, 2) = 0;
     Bi(2, 0) = 0;
     Bi(2, 1) = 0;
-    Bi(2, 2) = -1;
-#endif
-#if 0
-    Eigen::Matrix2d Ri,Ri_t,Rj,Rj_t,Rij ,Rij_t ,d_Ri_T,e1;
-    Eigen::Vector2d ti,tj,tij,e2;
-    Eigen::Matrix3d Ti = PoseToTrans(xi);
-    Eigen::Matrix3d Tj = PoseToTrans(xj);
-    Eigen::Matrix3d Tij = Ti.transpose()*Tj;
-    Ri  = Ti.block(0,0,2,2);
-    Rj = Tj.block(0,0,2,2);
-    Rij = Tij.block(0,0,2,2);
-    std::cout << "xi: " << xi << std::endl;
-    std::cout << "xj: " << xj << std::endl;
-    std::cout << "Ti: " << Ti << std::endl;
-    std::cout << "Tj: " << Tj << std::endl;
-    std::cout << "Tij: " << Tij << std::endl;
-    std::cout << "Ri: " << Ri << std::endl;
-    std::cout << "Rij: " << Rij << std::endl;
-    Ri_t = Ti.transpose().block(0,0,2,2);
-    Rj_t = Tj.transpose().block(0,0,2,2);
-    Rij_t = Tij.transpose().block(0,0,2,2);      
-    ti =Eigen::Vector2d(xi(0),xi(1));
-    tj =Eigen::Vector2d(xj(0),xj(1));
-    tij=Eigen::Vector2d(z(0),z(1));
-    d_Ri_T = Ti.transpose().block(0,0,2,2);
-    Eigen::Vector2d error = Rij_t*(Ri_t*(tj- ti)-tij);
-    double col = xj(2)-xi(2)-z(2);
-    ei  = Eigen::Vector3d(error(0),error(1),col);
-std::cout << "ei: " << ei << std::endl;
-    e1 =  Rij_t*Ri_t;
-    e2 =  Rij_t* d_Ri_T*( tj- ti);
+    Bi(2, 2) = 1;
 
-    Ai.block(0,0,2,2) = -e1;
-    Ai.block(0,2,2,1) = e2;
-    Ai.block(2,0,1,3) = Eigen::Vector3d(0.0,0.0,-1.0).transpose();
-    Bi.setIdentity();
-    Bi.block(0,0,2,2) = e1;
-#endif
     //TODO--end
 }
 
@@ -197,25 +177,26 @@ Eigen::VectorXd LinearizeAndSolve(std::vector<Eigen::Vector3d>& Vertexs,
         CalcJacobianAndError(xi,xj,z,ei,Ai,Bi);
 
         //TODO--Start
+        
+        //对当前回环位姿求雅可比矩阵Jij，Jij是一个3行，当前回环位姿点数*3的矩阵
         Eigen::MatrixXd Jij(3, Vertexs.size() * 3);
         Jij.setZero();
-// std::cout << "Ai: " << Ai << std::endl;
-// std::cout << "Bi: " << Bi << std::endl;
+
         Jij.block(0, tmpEdge.xi * 3, 3, 3) = Ai;
         Jij.block(0, tmpEdge.xj * 3, 3, 3) = Bi;
-//std::cout << "Jij: " << Jij << std::endl;
+
+        //对当前回环位姿求H和b，Hij = Jij_T * 信息矩阵 * Jij; bij = Jij_T * 信息矩阵 * eij
         H += (Jij.transpose() * infoMatrix * Jij);
         b += (Jij.transpose() * infoMatrix * ei);
+
         //TODO--End
     }
 
     //求解
     Eigen::VectorXd dx;
-std::cout << "H: " << H << std::endl;
-std::cout << "b: " << b << std::endl;
+
     //TODO--Start
-    dx = -H.inverse() * b;
-std::cout << "dx: " << dx << std::endl;   
+    dx = H.colPivHouseholderQr().solve(-b); //QR分解
     //TODO-End
 
     return dx;

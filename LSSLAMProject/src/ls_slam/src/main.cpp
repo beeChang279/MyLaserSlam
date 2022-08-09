@@ -151,8 +151,9 @@ int main(int argc, char **argv)
         //TODO--Start
         for(int i = 0; i < Vertexs.size(); i++)
         {
-            Vertexs[i] += dx.block(i * 3, 0, 3, 1);
+            Vertexs[i] += dx.block(i * 3, 0, 3, 1);//更新回环中的每个点的位姿
         }
+
         //TODO--End
 
         double maxError = -1;
@@ -178,8 +179,6 @@ int main(int argc, char **argv)
                                 Edges,1);
 
     ros::spin();
-
-
 
     return 0;
 }
