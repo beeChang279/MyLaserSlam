@@ -4,6 +4,7 @@
 #include <eigen3/Eigen/Householder>
 #include <eigen3/Eigen/Cholesky>
 #include <eigen3/Eigen/LU>
+#include <chrono>
 
 #include <iostream>
 const double GN_PI = 3.1415926;
@@ -109,7 +110,7 @@ void CalcJacobianAndError(Eigen::Vector3d xi,Eigen::Vector3d xj,Eigen::Vector3d 
     ei(0) = ei_t(0);
     ei(1) = ei_t(1);
     angle = xj(2) - xi(2) - z(2);
-    if(angle > GN_PI)
+    if(angle > GN_PI)//角度归一化，角度未归一化图形变形严重
     {
         angle -= 2 * GN_PI;
     }else if(angle < -GN_PI)
@@ -178,7 +179,7 @@ Eigen::VectorXd LinearizeAndSolve(std::vector<Eigen::Vector3d>& Vertexs,
 
         //TODO--Start
         
-        //对当前回环位姿求雅可比矩阵Jij，Jij是一个3行，当前回环位姿点数*3的矩阵
+        //对当前回环中的位姿求雅可比矩阵Jij，Jij是一个3行，当前回环位姿点数*3的矩阵
         Eigen::MatrixXd Jij(3, Vertexs.size() * 3);
         Jij.setZero();
 
@@ -196,7 +197,14 @@ Eigen::VectorXd LinearizeAndSolve(std::vector<Eigen::Vector3d>& Vertexs,
     Eigen::VectorXd dx;
 
     //TODO--Start
-    dx = H.colPivHouseholderQr().solve(-b); //QR分解
+    //std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+    //dx = H.inverse() * (-b);//直接求解,用时约0.00012，58次迭代完成总用时0.0403664,要求可逆
+    //dx = H.colPivHouseholderQr().solve(-b); //QR分解,用时约0.00018，58次迭代完成总用时0.0737936，无
+    dx = (H.transpose() * H).llt().solve(H.transpose() * (-b));//choleskey分解,用时约0.00008，58次迭代完成总用时0.0357698，要求正定
+    //dx = (H.transpose() * H).ldlt().solve(H.transpose() * (-b));//改进的choleskey分解,用时约0.00013，58次迭代完成总用时0.06514，要求正定或负半定
+    // std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+    // std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    // std::cout << "线性方程组求解用时: " << time_used.count() << std::endl;
     //TODO-End
 
     return dx;

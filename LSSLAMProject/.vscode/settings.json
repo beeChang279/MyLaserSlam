@@ -61,15 +61,18 @@
         "cinttypes": "cpp",
         "typeindex": "cpp",
         "typeinfo": "cpp",
-        "random": "cpp"
+        "random": "cpp",
+        "cholesky": "cpp",
+        "jacobi": "cpp"
     },
     "python.autoComplete.extraPaths": [
         "/opt/ros/melodic/lib/python2.7/dist-packages"
     ],
     "editor.defaultFormatter": "ms-vscode.cpptools",
-    "editor.fontFamily": "Fira Code",
+    //"editor.fontFamily": "Fira Code",
     "editor.fontLigatures": true,
     "python.analysis.extraPaths": [
         "/opt/ros/melodic/lib/python2.7/dist-packages"
-    ]
+    ],
+    "ros.distro": "melodic"
 }

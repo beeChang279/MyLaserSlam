@@ -4,6 +4,7 @@
 #include <ros/ros.h>
 #include <visualization_msgs/MarkerArray.h>
 
+#include <chrono>
 
 //for visual
 void PublishGraphForVisulization(ros::Publisher* pub,
@@ -120,8 +121,8 @@ int main(int argc, char **argv)
     afterGraphPub  = nodeHandle.advertise<visualization_msgs::MarkerArray>("afterPoseGraph",1,true);
 
 
-    std::string VertexPath = "/home/beechang/shenlanHW/HW6/LSSLAMProject/src/ls_slam/data/test_quadrat-v.dat";
-    std::string EdgePath = "/home/beechang/shenlanHW/HW6/LSSLAMProject/src/ls_slam/data/test_quadrat-e.dat";
+    std::string VertexPath = "/home/beechang/ros_test/MyLaserSlam/LSSLAMProject/src/ls_slam/data/test_quadrat-v.dat";
+    std::string EdgePath = "/home/beechang/ros_test/MyLaserSlam/LSSLAMProject/src/ls_slam/data/test_quadrat-e.dat";
 
 //    std::string VertexPath = "/home/eventec/LSSLAMProject/src/ls_slam/data/intel-v.dat";
 //    std::string EdgePath = "/home/eventec/LSSLAMProject/src/ls_slam/data/intel-e.dat";
@@ -141,12 +142,13 @@ int main(int argc, char **argv)
 
     int maxIteration = 100;
     double epsilon = 1e-4;
-
+//std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     for(int i = 0; i < maxIteration;i++)
     {
         std::cout << "Iterations:" << i << std::endl;
+        
         Eigen::VectorXd dx = LinearizeAndSolve(Vertexs,Edges);
-
+        
         //进行更新
         //TODO--Start
         for(int i = 0; i < Vertexs.size(); i++)
@@ -168,7 +170,9 @@ int main(int argc, char **argv)
         if(maxError < epsilon)
             break;
     }
-
+// std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+// std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+// std::cout << "总用时: " << time_used.count() << std::endl;
 
     double finalError  = ComputeError(Vertexs,Edges);
 
