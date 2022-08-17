@@ -3,7 +3,8 @@ project(ls_slam)
 
 ## Compile as C++11, supported in ROS Kinetic and newer
 # add_compile_options(-std=c++11)
-
+#set(CMAKE_PREFIX_PATH "/home/beechang/lib/g2o")
+list(APPEND CMAKE_MODULE_PATH /home/beechang/lib/g2o/cmake_modules)
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
@@ -14,10 +15,15 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(Eigen3 REQUIRED)
+find_package(Ceres REQUIRED)
+find_package(G2O REQUIRED)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
+set(G2O_LIBRARIES ${G2O_STUFF_LIBRARY} ${G2O_CORE_LIBRARY} ${G2O_CLI_LIBRARY} ${G2O_SOLVER_CHOLMOD} ${G2O_SOLVER_CSPARSE} ${G2O_SOLVER_CSPARSE_EXTENSION} 
+${G2O_SOLVER_DENSE} ${G2O_SOLVER_PCG} ${G2O_SOLVER_SLAM2D_LINEAR} ${G2O_SOLVER_STRUCTURE_ONLY} ${G2O_SOLVER_EIGEN} ${G2O_TYPES_DATA} ${G2O_TYPES_ICP} ${G2O_TYPES_SBA}
+${G2O_TYPES_SCLAM2D} ${G2O_TYPES_SIM3} ${G2O_TYPES_SLAM2D} ${G2O_TYPES_SLAM3D} cxsparse)
 
 ## Uncomment this if the package has a setup.py. This macro ensures
 ## modules and global scripts declared therein get installed
@@ -118,9 +124,13 @@ catkin_package(
 ## Specify additional locations of header files
 ## Your package locations should be listed before other locations
 include_directories(
-  include
-  include/ls_slam
-  ${catkin_INCLUDE_DIRS}  ${EIGEN_INCLUDE_DIRS}
+  include 
+  include/ls_slam 
+  ${catkin_INCLUDE_DIRS} 
+  ${EIGEN_INCLUDE_DIRS} 
+  ${CERES_INCLUDE_DIRS} 
+  ${G2O_INCLUDE_DIRS} 
+  "/usr/include/suitesparse" 
 )
 
 ## Declare a C++ library
@@ -138,8 +148,13 @@ include_directories(
 ## The recommended prefix ensures that target names across packages don't collide
 # add_executable(${PROJECT_NAME}_node src/ls_slam_node.cpp)
 
+#message("----------------CERES_INCLUDE_DIRS: ${CERES_INCLUDE_DIRS}")
+#message("----------------G2O_INCLUDE_DIRS: ${G2O_INCLUDE_DIRS}")
+#message("----------------CERES_LIBRARIES: ${CERES_LIBRARIES}")
+#message("----------------G2O_LIBRARIES: ${G2O_LIBRARIES}")
+
 add_executable(ls_slam src/main.cpp src/readfile.cpp src/gaussian_newton.cpp)
-target_link_libraries(ls_slam ${catkin_LIBRARIES} ${CSPARSE_LIBRARY} )
+target_link_libraries(ls_slam ${catkin_LIBRARIES} ${CSPARSE_LIBRARY} ${CERES_LIBRARIES} ${G2O_LIBRARIES})
 
 ## Rename C++ executable without prefix
 ## The above recommended prefix causes long target names, the following renames the

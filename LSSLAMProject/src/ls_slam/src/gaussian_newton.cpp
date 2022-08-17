@@ -6,8 +6,11 @@
 #include <eigen3/Eigen/LU>
 #include <chrono>
 
+#include <eigen3/Eigen/SparseCore>
+#include <eigen3/Eigen/Sparse>
+#include <eigen3/Eigen/SparseCholesky>
+
 #include <iostream>
-const double GN_PI = 3.1415926;
 
 //位姿-->转换矩阵
 Eigen::Matrix3d PoseToTrans(Eigen::Vector3d x)
@@ -73,7 +76,7 @@ void CalcJacobianAndError(Eigen::Vector3d xi,Eigen::Vector3d xj,Eigen::Vector3d 
                           Eigen::Vector3d& ei,Eigen::Matrix3d& Ai,Eigen::Matrix3d& Bi)
 {
     //TODO--Start
-    
+    // std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();    
     //定义变量
     double angle = 0;
     ei.setZero();
@@ -83,46 +86,37 @@ void CalcJacobianAndError(Eigen::Vector3d xi,Eigen::Vector3d xj,Eigen::Vector3d 
     Eigen::Matrix2d Ri;
     Eigen::Matrix2d Rij;
     Eigen::Matrix2d dRi_T_theta;
-    Eigen::Matrix3d Ti;
-    Eigen::Matrix3d Tj;
-    
+  
     //初始化值
     Ri.setZero();//xi到世界坐标系的旋转矩阵
     Rij.setZero();//xj到xi坐标系的旋转矩阵
     dRi_T_theta.setZero();//Ri的转置对theta_i的偏导数
-    Ti.setZero();//xi到世界坐标系的变换矩阵
-    Tj.setZero();//xj到世界坐标系的变换矩阵
     ti(0) = xi(0);//xi的平移向量x分量
     ti(1) = xi(1);//xi的平移向量y分量
     tj(0) = xj(0);//xj的平移向量x分量
     tj(1) = xj(1);//xj的平移向量y分量
     tij(0) = z(0);//xj相对于xi的平移向量x分量
     tij(1) = z(1);//xj相对于xi的平移向量y分量
-    Ti = PoseToTrans(xi);
-    Tj = PoseToTrans(xj);
     Ri << cos(xi(2)), -sin(xi(2)),
-            sin(xi(2)), cos(xi(2));//Ri = Ti.block(0, 0, 2, 2);
-   
-    // Rij << cos(z(2)), -sin(z(2)),
-    //         sin(z(2)), cos(z(2));//用z算出来的不对
-    Rij = (Ti.inverse() * Tj).block(0, 0, 2, 2); //xj到世界坐标系再到xi坐标系  
+            sin(xi(2)), cos(xi(2));
+       
+    Rij << cos(z(2)), -sin(z(2)),
+            sin(z(2)), cos(z(2)); 
     ei_t = Rij.transpose() * ((Ri.transpose() * (tj - ti)) - tij);
     ei(0) = ei_t(0);
     ei(1) = ei_t(1);
     angle = xj(2) - xi(2) - z(2);
-    if(angle > GN_PI)//角度归一化，角度未归一化图形变形严重
+    if(angle > M_PI)//角度归一化，角度未归一化图形变形严重
     {
-        angle -= 2 * GN_PI;
-    }else if(angle < -GN_PI)
+        angle -= 2 * M_PI;
+    }else if(angle < -M_PI)
     {
-        angle += 2 * GN_PI;
+        angle += 2 * M_PI;
     }      
     ei(2) = angle;
 
-    // dRi_T_theta << -(sin(xi(2))), cos(xi(2)),
-    //                -(cos(xi(2))), -(sin(xi(2)));//Ri的转置不需要对theta_i求导？求完导出错
-    dRi_T_theta << cos(xi(2)), sin(xi(2)),
-                    -sin(xi(2)), cos(xi(2));
+    dRi_T_theta << -sin(xi(2)), cos(xi(2)),
+                   -cos(xi(2)), -sin(xi(2));
     Ai.block(0, 0, 2, 2) = -Rij.transpose() * Ri.transpose();
     Ai.block(0, 2, 2, 1) = Rij.transpose() * dRi_T_theta * (tj - ti);
     Ai(2, 0) = 0;
@@ -135,7 +129,10 @@ void CalcJacobianAndError(Eigen::Vector3d xi,Eigen::Vector3d xj,Eigen::Vector3d 
     Bi(2, 0) = 0;
     Bi(2, 1) = 0;
     Bi(2, 2) = 1;
-
+    // std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+    // std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    // std::cout << "雅可比和误差求解用时: " << time_used.count() << std::endl;
+    //求解一次雅可比和误差用时约0.000038
     //TODO--end
 }
 
@@ -178,8 +175,10 @@ Eigen::VectorXd LinearizeAndSolve(std::vector<Eigen::Vector3d>& Vertexs,
         CalcJacobianAndError(xi,xj,z,ei,Ai,Bi);
 
         //TODO--Start
-        
+        // std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+#if 0
         //对当前回环中的位姿求雅可比矩阵Jij，Jij是一个3行，当前回环位姿点数*3的矩阵
+        //该写法低数据量有效，killian数据集H和b计算一次花费近2.3s，intel数据集H和b计算一次花费近0.3s，可能是J和H太大了
         Eigen::MatrixXd Jij(3, Vertexs.size() * 3);
         Jij.setZero();
 
@@ -189,19 +188,52 @@ Eigen::VectorXd LinearizeAndSolve(std::vector<Eigen::Vector3d>& Vertexs,
         //对当前回环位姿求H和b，Hij = Jij_T * 信息矩阵 * Jij; bij = Jij_T * 信息矩阵 * eij
         H += (Jij.transpose() * infoMatrix * Jij);
         b += (Jij.transpose() * infoMatrix * ei);
+#endif
 
+#if 1  
+        //该写法对于大数据量killian数据集仍能保持H和b计算一次约0.000071s
+       H.block(3*tmpEdge.xi,3*tmpEdge.xi,3,3) += Ai.transpose()*infoMatrix*Ai;
+       H.block(3*tmpEdge.xi,3*tmpEdge.xj,3,3) += Ai.transpose()*infoMatrix*Bi;
+       H.block(3*tmpEdge.xj,3*tmpEdge.xi,3,3) += Bi.transpose()*infoMatrix*Ai;
+       H.block(3*tmpEdge.xj,3*tmpEdge.xj,3,3) += Bi.transpose()*infoMatrix*Bi;
+       b.block(3*tmpEdge.xi,0,3,1) += Ai.transpose()*infoMatrix*ei;
+       b.block(3*tmpEdge.xj,0,3,1) += Bi.transpose()*infoMatrix*ei;
+#endif
+        // std::cout << "Edges.size(): " << Edges.size() << std::endl;
+        // std::cout << "i: " << i << std::endl;
+        // std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+        // std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+        // std::cout << "H和b求解用时: " << time_used.count() << std::endl;
+        //求解一次H和b用时约0.000071
         //TODO--End
     }
 
     //求解
     Eigen::VectorXd dx;
-
+ 
     //TODO--Start
-    //std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
-    //dx = H.inverse() * (-b);//直接求解,用时约0.00012，58次迭代完成总用时0.0403664,要求可逆
-    //dx = H.colPivHouseholderQr().solve(-b); //QR分解,用时约0.00018，58次迭代完成总用时0.0737936，无
-    dx = (H.transpose() * H).llt().solve(H.transpose() * (-b));//choleskey分解,用时约0.00008，58次迭代完成总用时0.0357698，要求正定
-    //dx = (H.transpose() * H).ldlt().solve(H.transpose() * (-b));//改进的choleskey分解,用时约0.00013，58次迭代完成总用时0.06514，要求正定或负半定
+    // std::cout << "线性方程组求解中..." << std::endl;
+    // std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+    //稠密矩阵解法，对于killian和intel数据集会一直卡在此处计算，耗时严重，killian数据集求解一次约2042s(半小时)
+    //test_quadrat直接求解,用时约0.0002，3次迭代收敛总用时0.0020682,要求可逆
+    //dx = H.inverse() * (-b);
+    
+    //QR分解,test_quadrat数据集用时约0.000242818，3次迭代收敛总用时0.00239064，无
+    //dx = H.colPivHouseholderQr().solve(-b); 
+   
+    //choleskey分解,test_quadrat数据集用时约0.000139042，3次迭代收敛总用时0.00190253，要求正定
+    //dx = (H.transpose() * H).llt().solve(H.transpose() * (-b));
+
+    //改进的choleskey分解,test_quadrat数据集用时约0.000157566，4次迭代完成总用时0.002577，要求正定或负半定
+    //dx = (H.transpose() * H).ldlt().solve(H.transpose() * (-b));
+
+    //eigen稀疏矩阵求解方法，test_quadrat数据集求解一次约0.00015407s，3次迭代收敛，总耗时0.00194703；
+    //killian数据集求解一次约0.878693s，6次迭代收敛，总耗时10.3719
+    //intel数据集求解一次约0.176618s，5次迭代收敛，总耗时2.54404
+    Eigen::SimplicialCholesky<Eigen::SparseMatrix<double>> solver;
+    Eigen::SparseMatrix<double> A = H.sparseView();
+    dx = solver.compute(A).solve(-b);
+    
     // std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
     // std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
     // std::cout << "线性方程组求解用时: " << time_used.count() << std::endl;

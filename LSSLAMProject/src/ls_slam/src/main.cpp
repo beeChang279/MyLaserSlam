@@ -5,6 +5,17 @@
 #include <visualization_msgs/MarkerArray.h>
 
 #include <chrono>
+#include "ceres_opt.h"
+#include <g2o/core/block_solver.h>
+#include <g2o/core/optimization_algorithm_gauss_newton.h>
+#include <g2o/solvers/csparse/linear_solver_csparse.h>
+#include <g2o/core/sparse_optimizer_terminate_action.h>
+#include <g2o/types/slam2d/vertex_se2.h>
+#include <g2o/types/slam2d/edge_se2.h>
+
+//#define GUASSIAN_NEWTON
+//#define CERES
+#define G2O
 
 //for visual
 void PublishGraphForVisulization(ros::Publisher* pub,
@@ -106,9 +117,6 @@ void PublishGraphForVisulization(ros::Publisher* pub,
     pub->publish(marray);
 }
 
-
-
-
 int main(int argc, char **argv)
 {
     ros::init(argc, argv, "ls_slam");
@@ -121,8 +129,8 @@ int main(int argc, char **argv)
     afterGraphPub  = nodeHandle.advertise<visualization_msgs::MarkerArray>("afterPoseGraph",1,true);
 
 
-    std::string VertexPath = "/home/beechang/ros_test/MyLaserSlam/LSSLAMProject/src/ls_slam/data/test_quadrat-v.dat";
-    std::string EdgePath = "/home/beechang/ros_test/MyLaserSlam/LSSLAMProject/src/ls_slam/data/test_quadrat-e.dat";
+    std::string VertexPath = "/home/beechang/shenlanHW/HW6/LSSLAMProject/src/ls_slam/data/test_quadrat-v.dat";
+    std::string EdgePath = "/home/beechang/shenlanHW/HW6/LSSLAMProject/src/ls_slam/data/test_quadrat-e.dat";
 
 //    std::string VertexPath = "/home/eventec/LSSLAMProject/src/ls_slam/data/intel-v.dat";
 //    std::string EdgePath = "/home/eventec/LSSLAMProject/src/ls_slam/data/intel-e.dat";
@@ -140,9 +148,116 @@ int main(int argc, char **argv)
     double initError = ComputeError(Vertexs,Edges);
     std::cout << "initError:" << initError << std::endl;
 
+
+#if defined CERES
+
+    //ceres优化
+    // 构建最小二乘问题
+    ceres::Problem problem;
+    ceres::LossFunction* loss_function = NULL;
+    ceres::LocalParameterization* angle_local_parameterization =
+        AngleLocalParameterization::Create();
+    for (int i=0; i < Edges.size(); ++i)
+    {
+        Edge tmpEdge = Edges[i];
+
+        const Eigen::Matrix3d sqrt_information =
+            tmpEdge.infoMatrix.llt().matrixL();
+        // Ceres will take ownership of the pointer.
+        ceres::CostFunction* cost_function = PoseGraph2dErrorTerm::Create(
+            tmpEdge.measurement(0), tmpEdge.measurement(1), tmpEdge.measurement(2), sqrt_information);
+        problem.AddResidualBlock(cost_function,
+                                loss_function,
+                                &Vertexs[tmpEdge.xi](0),
+                                &Vertexs[tmpEdge.xi](1),
+                                &Vertexs[tmpEdge.xi](2),
+                                &Vertexs[tmpEdge.xj](0),
+                                &Vertexs[tmpEdge.xj](1),
+                                &Vertexs[tmpEdge.xj](2));
+
+        problem.SetParameterization(&Vertexs[tmpEdge.xi](2),
+                                    angle_local_parameterization);
+        problem.SetParameterization(&Vertexs[tmpEdge.xj](2),
+                                    angle_local_parameterization);
+    }
+    problem.SetParameterBlockConstant(&Vertexs[0](0));
+    problem.SetParameterBlockConstant(&Vertexs[0](1));
+    problem.SetParameterBlockConstant(&Vertexs[0](2));
+
+    ceres::Solver::Options options;
+    options.max_num_iterations = 100;
+    options.linear_solver_type = ceres::SPARSE_NORMAL_CHOLESKY;
+    options.gradient_tolerance = 10e-4;
+    // options.function_tolerance = 10e-4;
+    // options.parameter_tolerance = 10e-4;
+    options.trust_region_strategy_type = ceres::DOGLEG;
+
+    ceres::Solver::Summary summary;
+    ceres::Solve(options, &problem, &summary);
+
+    std::cout << summary.FullReport() << '\n';
+
+#endif
+
+#if defined G2O
+
+    typedef g2o::BlockSolver<g2o::BlockSolverTraits<3, 3>> Block; // 每个误差项优化变量维度为3，误差值维度为3
+    //1、创建一个线性求解器LinearSolver，这里使用CSparse法，继承自LinearSolverCCS
+    //Block::LinearSolverType* linearSolver = new g2o::LinearSolverCSparse<Block::PoseMatrixType>();
+    std::unique_ptr<Block::LinearSolverType> linearSolver (new g2o::LinearSolverCSparse<Block::PoseMatrixType>());
+    //2、创建BlockSolver，并用上面定义的线性求解器初始化
+    //Block* solver_ptr = new Block(linearSolver);
+    std::unique_ptr<Block> solver_ptr(new Block(std::move(linearSolver))); 
+    //3、创建总求解器solver，并从GN, LM, DogLeg中选一个，再用上述块求解器BlockSolver初始化
+    g2o::OptimizationAlgorithmGaussNewton* solver = new g2o::OptimizationAlgorithmGaussNewton(std::move(solver_ptr));
+    //4、创建终极大boss，稀疏优化器（SparseOptimizer）
+    g2o::SparseOptimizer optimizer;
+    optimizer.setAlgorithm(solver);
+
+    //5、定义图的顶点和边，并添加到SparseOptimizer中
+    for (size_t i = 0; i < Vertexs.size(); i++) {
+        g2o::VertexSE2* v = new g2o::VertexSE2();
+        v->setEstimate(Vertexs[i]);
+        v->setId(i);
+        if (i == 0) {
+            v->setFixed(true);
+        }
+        optimizer.addVertex(v);
+    }
+
+    for (size_t i = 0; i < Edges.size(); i++) {
+        g2o::EdgeSE2* edge = new g2o::EdgeSE2();
+
+        Edge tmpEdge = Edges[i];
+
+        edge->setId(i);
+        edge->setVertex(0, optimizer.vertices()[tmpEdge.xi]);
+        edge->setVertex(1, optimizer.vertices()[tmpEdge.xj]);
+
+        edge->setMeasurement(tmpEdge.measurement);
+        edge->setInformation(tmpEdge.infoMatrix);
+        optimizer.addEdge(edge);
+    }
+
+    //6、设置优化参数，开始执行优化
+    optimizer.setVerbose(true);
+    optimizer.initializeOptimization();
+    g2o::SparseOptimizerTerminateAction* terminateAction = new g2o::SparseOptimizerTerminateAction;
+    terminateAction->setGainThreshold(1e-4);
+    optimizer.addPostIterationAction(terminateAction);
+    optimizer.optimize(100);
+
+    for (size_t i = 0; i < Vertexs.size(); i++) {
+        g2o::VertexSE2* v = static_cast<g2o::VertexSE2*>(optimizer.vertices()[i]);
+        Vertexs[i] = v->estimate().toVector();
+    }
+
+#endif
+
+#if defined GUASSIAN_NEWTON
     int maxIteration = 100;
     double epsilon = 1e-4;
-//std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
+    // std::chrono::steady_clock::time_point start_time = std::chrono::steady_clock::now();
     for(int i = 0; i < maxIteration;i++)
     {
         std::cout << "Iterations:" << i << std::endl;
@@ -154,8 +269,11 @@ int main(int argc, char **argv)
         for(int i = 0; i < Vertexs.size(); i++)
         {
             Vertexs[i] += dx.block(i * 3, 0, 3, 1);//更新回环中的每个点的位姿
+            if (Vertexs[i](2) > M_PI)
+                Vertexs[i](2) -= 2 * M_PI;
+            else if (Vertexs[i](2) < -M_PI)
+                Vertexs[i](2) += 2 * M_PI;
         }
-
         //TODO--End
 
         double maxError = -1;
@@ -170,10 +288,10 @@ int main(int argc, char **argv)
         if(maxError < epsilon)
             break;
     }
-// std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
-// std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
-// std::cout << "总用时: " << time_used.count() << std::endl;
-
+    // std::chrono::steady_clock::time_point end_time = std::chrono::steady_clock::now();
+    // std::chrono::duration<double> time_used = std::chrono::duration_cast<std::chrono::duration<double>>(end_time - start_time);
+    // std::cout << "总用时: " << time_used.count() << std::endl;
+#endif
     double finalError  = ComputeError(Vertexs,Edges);
 
     std::cout <<"FinalError:"<<finalError<<std::endl;
